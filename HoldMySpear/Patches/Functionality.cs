@@ -15,7 +15,7 @@ namespace HoldMySpear.Patches;
 
 static public class DropCheck
 {
-    static public ManualLogSource Logger = new ManualLogSource($"{PluginInfo.PLUGIN_NAME}.DropCheck");
+    static public ManualLogSource Logger = new ManualLogSource($"{Plugin.NAME}.DropCheck");
 
     static public bool IsSpear(ItemDrop.ItemData item)
     {

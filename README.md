@@ -7,7 +7,7 @@ Once a spear is owned, only its owner may pick it up.
 
 ## Dependencies:
 
-- BepInEx 5.4.2105
+- BepInEx 5.4.2200
 
 ## Requirements
 

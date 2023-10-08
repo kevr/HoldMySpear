@@ -27,11 +27,16 @@ using HoldMySpear.Patches;
 
 namespace HoldMySpear
 {
-    [BepInPlugin(PluginInfo.PLUGIN_GUID, PluginInfo.PLUGIN_NAME, PluginInfo.PLUGIN_VERSION)]
+    [BepInPlugin(GUID, NAME, VERSION)]
     public class Plugin : BaseUnityPlugin
     {
         // Constants
-        private readonly Harmony harmony = new(PluginInfo.PLUGIN_NAME);
+        internal const string NAME = "HoldMySpear";
+        internal const string VERSION = "1.0.3";
+        internal const string AUTHOR = "Kevver";
+        internal const string GUID = AUTHOR + "." + NAME;
+
+        private readonly Harmony harmony = new(NAME);
 
         // Plugin initialization
         private void Awake()
@@ -40,7 +45,7 @@ namespace HoldMySpear
             BepInEx.Logging.Logger.Sources.Add(DropCheck.Logger);
 
             // Plugin startup logic
-            Logger.LogInfo($"Plugin {PluginInfo.PLUGIN_NAME} is loaded!");
+            Logger.LogInfo($"Plugin {NAME} is loaded!");
 
             // Patch assembly via harmony mocks
             Assembly assembly = Assembly.GetExecutingAssembly();
@@ -50,7 +55,7 @@ namespace HoldMySpear
         // Plugin shutdown
         private void Destroy()
         {
-            Logger.LogInfo($"Plugin {PluginInfo.PLUGIN_NAME} destroyed.");
+            Logger.LogInfo($"Plugin {NAME} destroyed.");
         }
     }
 }

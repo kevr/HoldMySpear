@@ -1,9 +1,9 @@
 {
     "name": "HoldMySpear",
-    "version_number": "1.0.0",
+    "version_number": "1.0.3",
     "website_url": "https://github.com/kevr/HoldMySpear",
     "description": "A simple spear ownership mod for Valheim.",
     "dependencies": [
-        "denikson-BepInExPack_Valheim-5.4.2105"
+        "denikson-BepInExPack_Valheim-5.4.2200"
     ]
 }
