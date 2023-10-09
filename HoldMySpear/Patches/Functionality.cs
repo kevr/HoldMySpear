@@ -8,8 +8,10 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Numerics;
+using System.Text;
 using BepInEx.Logging;
 using HarmonyLib;
+using Unity.Curl;
 
 namespace HoldMySpear.Patches;
 
@@ -29,35 +31,65 @@ static public class DropCheck
     }
 }
 
+[HarmonyPatch(typeof(ItemDrop.ItemData), nameof(ItemDrop.ItemData.GetTooltip), typeof(ItemDrop.ItemData), typeof(int),
+    typeof(bool), typeof(float))]
+static class ItemDropItemDataGetTooltipPatch
+{
+    static void Postfix(ItemDrop.ItemData item, int qualityLevel, bool crafting, ref string __result)
+    {
+        if (item == null || !DropCheck.IsSpear(item))
+            return;
+
+        StringBuilder sb = new StringBuilder();
+        sb.Append($"{Environment.NewLine}{Environment.NewLine}");
+
+        if (item.m_customData.ContainsKey("owner"))
+        {
+            string owner = item.m_customData["owner"];
+            sb.Append($"Owned by: {owner}");
+        }
+
+        __result += sb.ToString();
+    }
+}
+
 [HarmonyPatch(typeof(ItemDrop), nameof(ItemDrop.Pickup))]
 static class ItemDropPickup
 {
     static bool Prefix(ItemDrop __instance)
     {
+        // If the drop is not a spear, bypass this function.
         if (!DropCheck.IsSpear(__instance.m_itemData))
-        {
             return true;
-        }
-        else
-        {
-            DropCheck.Logger.LogInfo("Found a spear!");
-        }
 
+        // A local reference to item's custom data.
+        ref Dictionary<string, string> customData = ref __instance.m_itemData.m_customData;
+
+        bool isOwned = false;
         string owner = "(NOT SET)";
-        if (__instance.m_itemData.m_customData.ContainsKey("owner"))
+
+        if (customData.ContainsKey("owner"))
         {
-            owner = __instance.m_itemData.m_customData["owner"];
+            isOwned = true;
+            owner = customData["owner"];
         }
-        DropCheck.Logger.LogInfo($"(Pre) Spear owned by {owner}");
 
-        string playerName = Player.m_localPlayer.GetPlayerName();
+        ref Player player = ref Player.m_localPlayer;
+        string playerName = player.GetPlayerName();
 
-        if (__instance.m_itemData.m_customData.ContainsKey("owner") && __instance.m_itemData.m_customData["owner"] != playerName)
+        if (isOwned && customData["owner"] != playerName)
+        {
+            player.Message(MessageHud.MessageType.Center,
+                $"Get your own spear, this one is held by {owner}!");
             return false;
+        }
 
-        __instance.m_itemData.m_customData["owner"] = playerName;
-        owner = __instance.m_itemData.m_customData["owner"];
-        DropCheck.Logger.LogInfo($"Spear owned by {owner}");
+        customData["owner"] = playerName;
+        owner = customData["owner"];
+
+        if (!isOwned)
+            DropCheck.Logger.LogInfo($"{owner} has obtained a spear.");
+
         return true;
     }
 }
