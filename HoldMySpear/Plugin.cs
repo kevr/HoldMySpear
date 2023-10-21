@@ -32,7 +32,7 @@ namespace HoldMySpear
     {
         // Constants
         internal const string NAME = "HoldMySpear";
-        internal const string VERSION = "1.0.3";
+        internal const string VERSION = "1.0.6";
         internal const string AUTHOR = "Kevver";
         internal const string GUID = AUTHOR + "." + NAME;
 
@@ -42,7 +42,7 @@ namespace HoldMySpear
         private void Awake()
         {
             // Setup project loggers
-            BepInEx.Logging.Logger.Sources.Add(DropCheck.Logger);
+            BepInEx.Logging.Logger.Sources.Add(HoldMySpear.Patches.Drop.Logger);
 
             // Plugin startup logic
             Logger.LogInfo($"Plugin {NAME} is loaded!");

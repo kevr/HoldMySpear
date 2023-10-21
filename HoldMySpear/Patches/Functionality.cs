@@ -8,47 +8,127 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Numerics;
+using System.Security.Permissions;
 using System.Text;
+using BepInEx;
 using BepInEx.Logging;
 using HarmonyLib;
 using Unity.Curl;
+using UnityEngine;
 
 namespace HoldMySpear.Patches;
 
-static public class DropCheck
+static public class Drop
 {
-    static public ManualLogSource Logger = new ManualLogSource($"{Plugin.NAME}.DropCheck");
+    // Constants
+    public const string OWNER_KEY = "owner";
+
+    // Statics
+    static public ManualLogSource Logger = new ManualLogSource($"{Plugin.NAME}.Drop");
 
     static public bool IsSpear(ItemDrop.ItemData item)
     {
-        return item.m_shared.m_skillType == Skills.SkillType.Spears;
+        return item != null && item.m_shared.m_skillType == Skills.SkillType.Spears;
     }
 
-    static public bool Ownership(Dictionary<string, string> customData)
+    static public bool IsOwned(ItemDrop.ItemData item)
     {
-        string playerName = Player.m_localPlayer.GetPlayerName();
-        return customData.ContainsKey("owner") && customData["owner"] == playerName;
+        ref Dictionary<string, string> data = ref item.m_customData;
+        return data.ContainsKey(OWNER_KEY) && data[OWNER_KEY] != null;
     }
 
-    static public string Owner(ItemDrop.ItemData item, bool enforceOwnership)
+    static public bool IsOwner(ItemDrop.ItemData item)
     {
-        if (item.m_customData.ContainsKey("owner"))
+        ref Dictionary<string, string> data = ref item.m_customData;
+        ref Player player = ref Player.m_localPlayer;
+        return data.ContainsKey(OWNER_KEY) && data[OWNER_KEY] == player.GetPlayerName();
+    }
+
+    static public string Owner(ItemDrop.ItemData item)
+    {
+        if(!item.m_customData.ContainsKey(OWNER_KEY))
         {
-            string owner = item.m_customData["owner"];
-
-            if (enforceOwnership)
-            {
-                ref Player player = ref Player.m_localPlayer;
-                if (owner != player.GetPlayerName())
-                {
-                    player.Message(MessageHud.MessageType.Center,
-                        $"Get your own spear, this one is held by {owner}!");
-                }
-            }
-
-            return owner;
+            item.m_customData[OWNER_KEY] = null;
         }
-        return null;
+        return item.m_customData[OWNER_KEY];
+    }
+}
+
+static class Utility
+{
+    // A functor expressing the ability to add an `item`
+    // to the local player's inventory.
+    static public bool Addable(ItemDrop.ItemData item)
+    {
+        if (!Drop.IsSpear(item))
+            return true;
+
+        if (!Drop.IsOwned(item))
+            item.m_customData[Drop.OWNER_KEY] = Player.m_localPlayer.GetPlayerName();
+
+        return Drop.IsOwner(item);
+    }
+
+    static public ZDO GetZDO(ref ItemDrop item)
+    {
+        ZNetView view = item.GetComponent<ZNetView>();
+        return view.GetZDO();
+    }
+
+    static public void Save(ref ItemDrop item)
+    {
+        ZDO zdo = GetZDO(ref item);
+        ItemDrop.SaveToZDO(item.m_itemData, zdo);
+    }
+
+    static public void Load(ref ItemDrop item)
+    {
+        item.Load();
+    }
+}
+
+[HarmonyPatch(typeof(CharacterDrop), nameof(CharacterDrop.DropItems))]
+static class CharacterDropDropItems
+{
+    static void Postfix(List<KeyValuePair<GameObject, int>> drops, UnityEngine.Vector3 centerPos, float dropArea)
+    {
+        foreach (KeyValuePair<GameObject, int> drop in drops)
+        {
+            ItemDrop item = drop.Key.GetComponent<ItemDrop>();
+            if (item == null)
+                continue;
+
+            if (Drop.IsSpear(item.m_itemData) && Drop.IsOwned(item.m_itemData))
+                Utility.Save(ref item);
+        }
+    }
+}
+
+[HarmonyPatch(typeof(ItemDrop), nameof(ItemDrop.GetHoverText))]
+static class ItemDropGetHoverText
+{
+    static void Postfix(ItemDrop __instance, ref string __result)
+    {
+        if (!__instance)
+            return;
+
+        // Load ZDO
+        Utility.Load(ref __instance);
+
+        if (!__instance.m_itemData.m_customData.ContainsKey(Drop.OWNER_KEY))
+            return;
+
+        string owner = __instance.m_itemData.m_customData[Drop.OWNER_KEY];
+        if (Drop.IsOwner(__instance.m_itemData))
+        {
+            string hotkey = "L-Alt + E";
+            string label = "Disown";
+            __result += $"{Environment.NewLine}[<color=yellow><b>{hotkey}</b></color>] {label}";
+        }
+        else
+        {
+            __result += $"{Environment.NewLine}{Environment.NewLine}<b>Owner</b>: {owner}";
+        }
     }
 }
 
@@ -58,15 +138,16 @@ static class ItemDropItemDataGetTooltipPatch
 {
     static void Postfix(ItemDrop.ItemData item, int qualityLevel, bool crafting, ref string __result)
     {
-        if (item == null || !DropCheck.IsSpear(item))
+
+        if (!Drop.IsSpear(item))
             return;
 
         StringBuilder sb = new StringBuilder();
         sb.Append($"{Environment.NewLine}{Environment.NewLine}");
 
-        if (item.m_customData.ContainsKey("owner"))
+        if (item.m_customData.ContainsKey(Drop.OWNER_KEY))
         {
-            string owner = item.m_customData["owner"];
+            string owner = item.m_customData[Drop.OWNER_KEY];
             sb.Append($"Owned by: {owner}");
         }
 
@@ -80,49 +161,44 @@ static class ItemDropPickup
     static bool Prefix(ItemDrop __instance)
     {
         // If the drop is not a spear, bypass this function.
-        if (!DropCheck.IsSpear(__instance.m_itemData))
+        if (!Drop.IsSpear(__instance.m_itemData))
             return true;
 
         // A local reference to item's custom data.
         ref Dictionary<string, string> customData = ref __instance.m_itemData.m_customData;
 
-        string owner = DropCheck.Owner(__instance.m_itemData, true);
-        bool isOwned = owner != null;
+        string owner = Drop.Owner(__instance.m_itemData);
 
         ref Player player = ref Player.m_localPlayer;
         string playerName = player.GetPlayerName();
 
-        if (isOwned && owner != playerName)
-            return false;
+        bool isOwned = Drop.IsOwned(__instance.m_itemData);
+        if (isOwned)
+        {
+            if (owner != playerName)
+            {
+                string message = $"Get your own spear, this one is held by {owner}!";
+                player.Message(MessageHud.MessageType.Center, message);
+                return false;
+            }
+            else if (Input.GetKey(KeyCode.LeftAlt))
+            {
+                customData.Remove(Drop.OWNER_KEY);
+                Utility.Save(ref __instance);
+                return false;
+            }
+        }
 
-        customData["owner"] = playerName;
-        owner = customData["owner"];
+        customData[Drop.OWNER_KEY] = playerName;
+        owner = customData[Drop.OWNER_KEY];
 
         if (!isOwned)
-            DropCheck.Logger.LogInfo($"{owner} has obtained a spear.");
+        {
+            Drop.Logger.LogInfo($"{owner} has obtained a spear.");
+        }
 
+        Utility.Save(ref __instance);
         return true;
-    }
-}
-
-static class Utility
-{
-    // A functor expressing the ability to add an `item`
-    // to the local player's inventory.
-    static public bool Addable(ItemDrop.ItemData item)
-    {
-        bool isSpear = false;
-        if (item == null || !(isSpear = DropCheck.IsSpear(item)))
-        {
-            return true;
-        }
-
-        if (!item.m_customData.ContainsKey("owner") && isSpear)
-        {
-            item.m_customData["owner"] = Player.m_localPlayer.GetPlayerName();
-        }
-
-        return DropCheck.Ownership(item.m_customData);
     }
 }
 
@@ -154,7 +230,14 @@ static class InventoryMoveItemToThisXY
             return true;
 
         bool addable = Utility.Addable(item);
-        DropCheck.Owner(item, true);
+
+        if (!addable)
+        {
+            string owner = Drop.Owner(item);
+            string message = $"Get your own spear, this one is held by {owner}!";
+            Player.m_localPlayer.Message(MessageHud.MessageType.Center, message);
+        }
+
         return addable;
     }
 }
