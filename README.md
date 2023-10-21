@@ -8,20 +8,24 @@ cannot be thrown without risking pickup by another player. Because of this,
 spear users must essentially opt-out of using the spear's special ability
 when playing with others to avoid confusion and/or lose their weapon.
 
-This mod solves that issue by providing permanent player ownership of
-spears.
+This mod solves that issue by providing player ownership of spears.
 
 ## Overview
 
-By default, spears are not owned by players. With HoldMySpears,
-once a player obtains a spear in their inventory, that spear is
-then bound to that player indefinitely.
-
+- [Ownership](#ownership)
 - [Tips](#tips)
 - [Dependencies](#dependencies)
 - [Requirements](#requirements)
 - [Installation](#installation)
 - [Accreditation](#accreditation)
+
+## Ownership
+
+To take ownership of a spear, simply pick up an unowned spear.
+
+Once owned, a spear can be disowned by throwing it on the ground
+and using the `L-Alt + E` key combination when hovering over it
+with your cursor.
 
 ## Tips
 
