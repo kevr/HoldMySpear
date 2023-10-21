@@ -63,10 +63,7 @@ static class Utility
         if (!Drop.IsSpear(item))
             return true;
 
-        if (!Drop.IsOwned(item))
-            item.m_customData[Drop.OWNER_KEY] = Player.m_localPlayer.GetPlayerName();
-
-        return Drop.IsOwner(item);
+        return !Drop.IsOwned(item) || Drop.IsOwner(item);
     }
 
     static public ZDO GetZDO(ref ItemDrop item)
@@ -127,7 +124,7 @@ static class ItemDropGetHoverText
         }
         else
         {
-            __result += $"{Environment.NewLine}{Environment.NewLine}<b>Owner</b>: {owner}";
+            __result += $"{Environment.NewLine}{Environment.NewLine}<b>Owned by:</b> <color=orange>{owner}</color>";
         }
     }
 }
@@ -148,7 +145,7 @@ static class ItemDropItemDataGetTooltipPatch
         if (item.m_customData.ContainsKey(Drop.OWNER_KEY))
         {
             string owner = item.m_customData[Drop.OWNER_KEY];
-            sb.Append($"Owned by: {owner}");
+            sb.Append($"<b>Owned by:</b> <color=orange>{owner}</color>");
         }
 
         __result += sb.ToString();
@@ -185,19 +182,21 @@ static class ItemDropPickup
             {
                 customData.Remove(Drop.OWNER_KEY);
                 Utility.Save(ref __instance);
+                Drop.Logger.LogInfo("(ItemDropPickup) -> Owner removed");
                 return false;
             }
         }
+
+        Drop.Logger.LogInfo($"(ItemDropPickup) -> Updated owner to {playerName}");
 
         customData[Drop.OWNER_KEY] = playerName;
         owner = customData[Drop.OWNER_KEY];
 
         if (!isOwned)
         {
-            Drop.Logger.LogInfo($"{owner} has obtained a spear.");
+            Drop.Logger.LogInfo($"(ItemDropPickup) -> {owner} has obtained a spear.");
         }
 
-        Utility.Save(ref __instance);
         return true;
     }
 }
@@ -216,7 +215,17 @@ static class ItemDropAdd
 {
     static bool Prefix(Inventory __instance, ItemDrop.ItemData item)
     {
-        return Utility.Addable(item);
+        if (!Drop.IsSpear(item))
+            return true;
+
+        bool addable = Utility.Addable(item);
+        if (addable && !Drop.IsOwned(item))
+        {
+            item.m_customData[Drop.OWNER_KEY] = Player.m_localPlayer.GetPlayerName();
+            Drop.Logger.LogInfo($"(ItemDropAdd) -> Updated owner to {item.m_customData[Drop.OWNER_KEY]}");
+        }
+
+        return addable;
     }
 }
 
