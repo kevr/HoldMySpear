@@ -1,4 +1,10 @@
 ## Changelog
+### 1.0.10
+* Added Buy Me A Coffee info to README
+
+### 1.0.7-1.0.9
+* Added ServerSync and locked isModEnabled configuration option
+
 ### 1.0.6
 * Added the ability to disown a dropped spear
 

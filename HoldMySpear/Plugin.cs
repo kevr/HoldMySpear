@@ -24,6 +24,7 @@ using UnityEngine;
 using JetBrains.Annotations;
 using HarmonyLib;
 using HoldMySpear.Patches;
+using ServerSync;
 
 namespace HoldMySpear
 {
@@ -32,11 +33,22 @@ namespace HoldMySpear
     {
         // Constants
         internal const string NAME = "HoldMySpear";
-        internal const string VERSION = "1.0.6";
+        internal const string VERSION = "1.0.10";
         internal const string AUTHOR = "Kevver";
         internal const string GUID = AUTHOR + "." + NAME;
 
+        // Harmony
         private readonly Harmony harmony = new(NAME);
+
+        // Configuration
+        static public ConfigEntry<bool> isModEnabled;
+
+        // ServerSync
+        ServerSync.ConfigSync configSync = new ServerSync.ConfigSync(GUID) {
+            DisplayName = NAME,
+            CurrentVersion = VERSION,
+            MinimumRequiredVersion = VERSION
+        };
 
         // Plugin initialization
         private void Awake()
@@ -46,6 +58,11 @@ namespace HoldMySpear
 
             // Plugin startup logic
             Logger.LogInfo($"Plugin {NAME} is loaded!");
+
+            // Configuration setup
+            string desc = "Enable the mod (Synced with server)";
+            isModEnabled = Config.Bind("General", "isModEnabled", true, desc);
+            configSync.AddLockingConfigEntry<bool>(isModEnabled);
 
             // Patch assembly via harmony mocks
             Assembly assembly = Assembly.GetExecutingAssembly();

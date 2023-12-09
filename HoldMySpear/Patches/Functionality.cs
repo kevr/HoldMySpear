@@ -15,41 +15,60 @@ using BepInEx.Logging;
 using HarmonyLib;
 using Unity.Curl;
 using UnityEngine;
+using HoldMySpear;
+using System.Net;
+using System.Diagnostics.Eventing.Reader;
 
 namespace HoldMySpear.Patches;
 
 static public class Drop
 {
     // Constants
-    public const string OWNER_KEY = "owner";
+    public const string OWNER_KEY = $"{Plugin.GUID}.owner";
 
     // Statics
     static public ManualLogSource Logger = new ManualLogSource($"{Plugin.NAME}.Drop");
 
+    static public bool IsItem(ItemDrop.ItemData item)
+    {
+        return item != null;
+    }
+
     static public bool IsSpear(ItemDrop.ItemData item)
     {
-        return item != null && item.m_shared.m_skillType == Skills.SkillType.Spears;
+        return IsItem(item) && item.m_shared.m_skillType == Skills.SkillType.Spears;
     }
 
     static public bool IsOwned(ItemDrop.ItemData item)
     {
         ref Dictionary<string, string> data = ref item.m_customData;
-        return data.ContainsKey(OWNER_KEY) && data[OWNER_KEY] != null;
+        return data.ContainsKey(OWNER_KEY);
     }
 
     static public bool IsOwner(ItemDrop.ItemData item)
     {
         ref Dictionary<string, string> data = ref item.m_customData;
         ref Player player = ref Player.m_localPlayer;
-        return data.ContainsKey(OWNER_KEY) && data[OWNER_KEY] == player.GetPlayerName();
+        return IsOwned(item) && data[OWNER_KEY] == player.GetPlayerName();
+    }
+
+    static public void BecomeOwner(ref ItemDrop.ItemData item)
+    {
+        if (item.m_customData.ContainsKey("owner"))
+        {
+            item.m_customData.Remove("owner");
+            Drop.Logger.LogInfo("(BecomeOwner) -> Removed legacy owner of spear found");
+        }
+        item.m_customData[Drop.OWNER_KEY] = Player.m_localPlayer.GetPlayerName();
+        Drop.Logger.LogInfo($"(BecomeOwner) -> Updated owner to {item.m_customData[Drop.OWNER_KEY]}");
     }
 
     static public string Owner(ItemDrop.ItemData item)
     {
-        if(!item.m_customData.ContainsKey(OWNER_KEY))
-        {
-            item.m_customData[OWNER_KEY] = null;
-        }
+        // Return the owner of the item; null if there's no owner.
+        if (!IsOwned(item))
+            return null;
+
         return item.m_customData[OWNER_KEY];
     }
 }
@@ -60,7 +79,7 @@ static class Utility
     // to the local player's inventory.
     static public bool Addable(ItemDrop.ItemData item)
     {
-        if (!Drop.IsSpear(item))
+        if (!Plugin.isModEnabled.Value || !Drop.IsSpear(item))
             return true;
 
         return !Drop.IsOwned(item) || Drop.IsOwner(item);
@@ -89,6 +108,9 @@ static class CharacterDropDropItems
 {
     static void Postfix(List<KeyValuePair<GameObject, int>> drops, UnityEngine.Vector3 centerPos, float dropArea)
     {
+        if (!Plugin.isModEnabled.Value)
+            return;
+
         foreach (KeyValuePair<GameObject, int> drop in drops)
         {
             ItemDrop item = drop.Key.GetComponent<ItemDrop>();
@@ -106,17 +128,18 @@ static class ItemDropGetHoverText
 {
     static void Postfix(ItemDrop __instance, ref string __result)
     {
-        if (!__instance)
+        if (!Plugin.isModEnabled.Value || !__instance)
             return;
 
         // Load ZDO
-        Utility.Load(ref __instance);
+        // Utility.Load(ref __instance);
 
-        if (!__instance.m_itemData.m_customData.ContainsKey(Drop.OWNER_KEY))
+        ref ItemDrop.ItemData item = ref __instance.m_itemData;
+        if (!Drop.IsOwned(item))
             return;
 
-        string owner = __instance.m_itemData.m_customData[Drop.OWNER_KEY];
-        if (Drop.IsOwner(__instance.m_itemData))
+        string owner = Drop.Owner(item);
+        if (Drop.IsOwner(item))
         {
             string hotkey = "L-Alt + E";
             string label = "Disown";
@@ -135,18 +158,14 @@ static class ItemDropItemDataGetTooltipPatch
 {
     static void Postfix(ItemDrop.ItemData item, int qualityLevel, bool crafting, ref string __result)
     {
-
-        if (!Drop.IsSpear(item))
+        if (!Plugin.isModEnabled.Value || !Drop.IsSpear(item) || !Drop.IsOwned(item))
             return;
 
         StringBuilder sb = new StringBuilder();
         sb.Append($"{Environment.NewLine}{Environment.NewLine}");
 
-        if (item.m_customData.ContainsKey(Drop.OWNER_KEY))
-        {
-            string owner = item.m_customData[Drop.OWNER_KEY];
-            sb.Append($"<b>Owned by:</b> <color=orange>{owner}</color>");
-        }
+        string owner = Drop.Owner(item);
+        sb.Append($"<b>Owned by:</b> <color=orange>{owner}</color>");
 
         __result += sb.ToString();
     }
@@ -158,7 +177,7 @@ static class ItemDropPickup
     static bool Prefix(ItemDrop __instance)
     {
         // If the drop is not a spear, bypass this function.
-        if (!Drop.IsSpear(__instance.m_itemData))
+        if (!Plugin.isModEnabled.Value || !Drop.IsSpear(__instance.m_itemData))
             return true;
 
         // A local reference to item's custom data.
@@ -187,16 +206,6 @@ static class ItemDropPickup
             }
         }
 
-        Drop.Logger.LogInfo($"(ItemDropPickup) -> Updated owner to {playerName}");
-
-        customData[Drop.OWNER_KEY] = playerName;
-        owner = customData[Drop.OWNER_KEY];
-
-        if (!isOwned)
-        {
-            Drop.Logger.LogInfo($"(ItemDropPickup) -> {owner} has obtained a spear.");
-        }
-
         return true;
     }
 }
@@ -206,6 +215,16 @@ static class ItemDropAddable
 {
     static bool Prefix(Inventory __instance, ItemDrop.ItemData item, int stack = -1)
     {
+        // Legacy key update for drops on the ground
+        if (Drop.IsItem(item) && item.m_customData.ContainsKey("owner"))
+        {
+            // Move "owner" to OWNER_KEY
+            item.m_customData[Drop.OWNER_KEY] = item.m_customData["owner"];
+
+            // Remove "owner"
+            item.m_customData.Remove("owner");
+        }
+
         return Utility.Addable(item);
     }
 }
@@ -215,15 +234,12 @@ static class ItemDropAdd
 {
     static bool Prefix(Inventory __instance, ItemDrop.ItemData item)
     {
-        if (!Drop.IsSpear(item))
+        if (!Plugin.isModEnabled.Value || !Drop.IsSpear(item))
             return true;
 
         bool addable = Utility.Addable(item);
         if (addable && !Drop.IsOwned(item))
-        {
-            item.m_customData[Drop.OWNER_KEY] = Player.m_localPlayer.GetPlayerName();
-            Drop.Logger.LogInfo($"(ItemDropAdd) -> Updated owner to {item.m_customData[Drop.OWNER_KEY]}");
-        }
+            Drop.BecomeOwner(ref item);
 
         return addable;
     }
@@ -234,19 +250,40 @@ static class InventoryMoveItemToThisXY
 {
     static bool Prefix(Inventory fromInventory, ItemDrop.ItemData item, int amount, int x, int y)
     {
+        if (!Plugin.isModEnabled.Value || !Drop.IsSpear(item))
+            return true;
+
         bool toPlayer = !fromInventory.Equals(Player.m_localPlayer.GetInventory());
         if (!toPlayer)
             return true;
 
         bool addable = Utility.Addable(item);
-
-        if (!addable)
-        {
-            string owner = Drop.Owner(item);
-            string message = $"Get your own spear, this one is held by {owner}!";
-            Player.m_localPlayer.Message(MessageHud.MessageType.Center, message);
-        }
+        if (addable)
+            Drop.BecomeOwner(ref item);
 
         return addable;
+    }
+}
+
+[HarmonyPatch(typeof(Player), nameof(Player.OnSpawned))]
+static class PlayerSpawned
+{
+    public static void Postfix()
+    {
+        if (!Plugin.isModEnabled.Value)
+            return;
+
+        ref Player player = ref Player.m_localPlayer;
+
+        // Update items in the player's inventory with ownership
+        List<ItemDrop.ItemData> items = player.GetInventory().GetAllItems();
+        items.ForEach(item =>
+        {
+            if (!Drop.IsSpear(item))
+                return;
+
+            // Own the spear
+            Drop.BecomeOwner(ref item);
+        });
     }
 }
