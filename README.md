@@ -55,3 +55,9 @@ was derived through [Azumatt](https://github.com/AzumattDev)'s
 [BindOnEquip](https://github.com/AzumattDev/BindOnEquip) plugin.
 
 The name of this project was suggested by Chee, a user on Discord.
+
+## Donations
+
+I spend most of my time these days playing and modding Valheim. Any donations are greatly appreciated and can be given through my [Buy Me A Coffee](https://www.buymeacoffee.com/kevver) page.
+
+Thanks to all of those who support my work! This kind of support gives me more ability to work on mods with my time :)
